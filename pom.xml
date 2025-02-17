@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project
+        xmlns="http://maven.apache.org/POM/4.0.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                        http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>org.example</groupId>
@@ -27,43 +30,49 @@
     </repositories>
 
     <dependencies>
+        <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
             <version>${spring-boot.version}</version>
         </dependency>
 
+        <!-- Spring Boot Data JPA -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
             <version>${spring-boot.version}</version>
         </dependency>
 
+        <!-- SQLite -->
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
             <version>3.41.2.1</version>
         </dependency>
 
+        <!-- Hibernate Community Dialects -->
         <dependency>
             <groupId>org.hibernate.orm</groupId>
             <artifactId>hibernate-community-dialects</artifactId>
             <version>6.2.5.Final</version>
         </dependency>
 
+        <!-- LZ4 Compression -->
         <dependency>
             <groupId>net.jpountz.lz4</groupId>
             <artifactId>lz4</artifactId>
             <version>1.3.0</version>
         </dependency>
 
-        <!-- JMH: core + annotation processor -->
+        <!-- JMH Core -->
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-core</artifactId>
             <version>1.37</version>
         </dependency>
 
+        <!-- JMH Annotation Processor -->
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-generator-annprocess</artifactId>
@@ -71,6 +80,7 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -78,6 +88,7 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Rabin Fingerprint (Local) -->
         <dependency>
             <groupId>com.github.dagrayfield</groupId>
             <artifactId>rabin-fingerprint</artifactId>
@@ -89,7 +100,7 @@
 
     <build>
         <plugins>
-            <!-- Compilation + annotation processing (JMH) -->
+            <!-- Compiler + Annotation Processing pour JMH -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -107,7 +118,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Optionnel : Générer un jar avec toutes les dépendances -->
+            <!-- Maven Shade Plugin pour créer un uber-jar contenant TOUT (JMH inclus) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -118,6 +129,17 @@
                         <goals>
                             <goal>shade</goal>
                         </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <!-- Merge le MANIFEST et définit la classe principale -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>org.example.benchmark.BenchmarkRunner</mainClass>
+                                </transformer>
+                                <!-- Merge les services JMH pour ForkedMain -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

@@ -8,7 +8,7 @@ public class BenchmarkRunner {
     public static void main(String[] args) throws Exception {
         Options opt = new OptionsBuilder()
                 .include(FileProcessingBenchmark.class.getSimpleName())
-                .forks(0)
+                .forks(1)
                 .warmupIterations(5)
                 .measurementIterations(5)
                 .build();
