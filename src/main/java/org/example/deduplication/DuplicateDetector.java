@@ -1,18 +1,17 @@
 package org.example.deduplication;
 
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
+import net.jpountz.xxhash.XXHash64;
+import net.jpountz.xxhash.XXHashFactory;
+import org.springframework.stereotype.Service;
 import java.util.HashSet;
 import java.util.Set;
-import org.springframework.stereotype.Service;
 
 @Service
 public class DuplicateDetector {
-    private final Set<String> chunkHashes = new HashSet<>();
+    private final Set<Long> chunkHashes = new HashSet<>();
 
-    public boolean isDuplicate(byte[] chunk) throws NoSuchAlgorithmException {
-        String hash = computeSHA256(chunk);
+    public boolean isDuplicate(byte[] chunk) {
+        long hash = computeXXHash(chunk);
         if (chunkHashes.contains(hash)) {
             return true;
         }
@@ -20,9 +19,10 @@ public class DuplicateDetector {
         return false;
     }
 
-    public String computeSHA256(byte[] data) throws NoSuchAlgorithmException {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hash = digest.digest(data);
-        return Base64.getEncoder().encodeToString(hash);
+    public long computeXXHash(byte[] data) {
+        XXHashFactory factory = XXHashFactory.fastestInstance();
+        XXHash64 xxHash64 = factory.hash64();
+        long seed = 0;
+        return xxHash64.hash(data, 0, data.length, seed);
     }
 }
