@@ -2,7 +2,8 @@ package org.example.compression;
 
 import net.jpountz.lz4.*;
 import org.springframework.stereotype.Service;
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 
 @Service
 public class CompressionService {

@@ -4,7 +4,6 @@ import org.example.model.Chunk;
 import org.example.service.FileProcessor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
@@ -23,7 +22,7 @@ public class FileController {
         try {
             List<Chunk> processedChunks = fileProcessor.processFile(filePath);
             return ResponseEntity.ok(processedChunks);
-        } catch (IOException | NoSuchAlgorithmException e) {
+        } catch (IOException e) {
             return ResponseEntity.internalServerError().body(null);
         }
     }
