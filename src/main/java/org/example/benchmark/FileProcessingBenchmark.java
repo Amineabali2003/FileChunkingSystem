@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @State(Scope.Thread)
 public class FileProcessingBenchmark {
-    private static final String TEST_FILE = "testfile.txt";
+    private static final String TEST_FILE = "/Users/abalimohammedamine/Downloads/test.txt";
     private RabinChunker chunker;
     private DuplicateDetector deduplicator;
     private CompressionService compressor;

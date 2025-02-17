@@ -12,6 +12,7 @@ target/
 *.iml
 *.ipr
 database.db
+dependency-reduced-pom.xml
 
 ### Eclipse ###
 .apt_generated
