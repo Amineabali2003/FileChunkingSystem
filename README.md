@@ -13,51 +13,51 @@ FileChunkingSystem est une application de gestion de fichiers permettant de :
 🚀 Installation
 
 1️⃣ Cloner le projet
-
+```
 git clone https://github.com/votre-repo/FileChunkingSystem.git
 cd FileChunkingSystem
-
+```
 2️⃣ Compiler et générer le JAR
-
+```
 mvn clean package
-
+```
 Le fichier exécutable est généré dans target/FileChunkingSystem-1.0-SNAPSHOT.jar.
 
 🔥 Exécution de l’application
 
 Démarrer l’application Spring Boot
-
+```
 mvn clean install                                                            
 mvn spring-boot:run
-
+```
 L’API sera disponible sur http://localhost:8080.
 
 1️⃣ Upload un fichier pour traitement
-
+```
 curl -X POST "http://localhost:8080/api/process-file" -F "file=@/chemin/vers/fichier.txt"
-
+```
 2️⃣ Récupérer tous les chunks stockés
-
+```
 curl -X GET "http://localhost:8080/api/chunks"
-
+```
 ⚡ Exécuter le Benchmark
 
 Le benchmark utilise JMH pour évaluer la performance des opérations.
 
 1️⃣ Générer le package avec JMH
-
+```
 mvn clean package
-
+```
 2️⃣ Lancer le benchmark
-
+```
 java -jar target/FileChunkingSystem-1.0-SNAPSHOT.jar
-
+```
 ⚠️ Par défaut, cela exécutera tous les benchmarks.
 
 3️⃣ Exécuter un benchmark spécifique
-
+```
 java -jar target/FileChunkingSystem-1.0-SNAPSHOT.jar org.example.benchmark.FileProcessingBenchmark
-
+```
 🔍 Structure du Projet
 
 FileChunkingSystem/
