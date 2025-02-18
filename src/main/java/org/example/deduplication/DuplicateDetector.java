@@ -3,20 +3,25 @@ package org.example.deduplication;
 import net.jpountz.xxhash.XXHash64;
 import net.jpountz.xxhash.XXHashFactory;
 import org.springframework.stereotype.Service;
-import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 @Service
 public class DuplicateDetector {
-    private final Set<Long> chunkHashes = new HashSet<>();
+    private static final Logger logger = Logger.getLogger(DuplicateDetector.class.getName());
+    private final Set<Long> chunkHashes = ConcurrentHashMap.newKeySet();
 
     public boolean isDuplicate(byte[] chunk) {
         long hash = computeXXHash(chunk);
-        if (chunkHashes.contains(hash)) {
-            return true;
+        boolean isDuplicate = !chunkHashes.add(hash);
+
+        if (isDuplicate) {
+            logger.info("Chunk détecté comme doublon: " + hash);
+        } else {
+            logger.info("Nouveau chunk ajouté: " + hash);
         }
-        chunkHashes.add(hash);
-        return false;
+        return isDuplicate;
     }
 
     public long computeXXHash(byte[] data) {
