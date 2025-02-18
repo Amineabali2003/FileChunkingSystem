@@ -5,7 +5,6 @@ import org.example.compression.CompressionService;
 import org.example.deduplication.DuplicateDetector;
 import org.openjdk.jmh.annotations.*;
 import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -20,20 +19,20 @@ public class FileProcessingBenchmark {
     private List<byte[]> chunks;
 
     @Setup(Level.Invocation)
-    public void setUp() throws Exception {
+    public void setUp() throws IOException {
         chunker = new RabinChunker();
         deduplicator = new DuplicateDetector();
         compressor = new CompressionService();
-        chunks = chunker.chunkFile(TEST_FILE);
+        chunks = chunker.chunkData(TEST_FILE);
     }
 
     @Benchmark
     public List<byte[]> benchmarkChunking() throws IOException {
-        return chunker.chunkFile(TEST_FILE);
+        return chunker.chunkData(TEST_FILE);
     }
 
     @Benchmark
-    public boolean benchmarkDeduplication() throws NoSuchAlgorithmException {
+    public boolean benchmarkDeduplication() {
         boolean hasDuplicate = false;
         for (byte[] chunk : chunks) {
             if (deduplicator.isDuplicate(chunk)) {
