@@ -10,11 +10,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
-public class FastCDCChunker {
+public class FastCDCChunker implements ChunkerInterface {
+
+    public final Chunker chunker;
+
+    public FastCDCChunker(Chunker chunker) {
+        this.chunker = chunker;
+    }
+
+    public FastCDCChunker() {
+        this(new ChunkerBuilder().build());
+    }
+
+    @Override
     public List<byte[]> chunkData(byte[] data) throws IOException {
         List<byte[]> chunks = new ArrayList<>();
-
-        Chunker chunker = new ChunkerBuilder().build();
 
         for (Chunk c : chunker.chunk(data)) {
             chunks.add(c.getData());
