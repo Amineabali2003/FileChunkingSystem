@@ -59,7 +59,7 @@ java -jar target/FileChunkingSystem-1.0-SNAPSHOT.jar
 java -jar target/FileChunkingSystem-1.0-SNAPSHOT.jar org.example.benchmark.FileProcessingBenchmark
 ```
 🔍 Structure du Projet
-
+```
 FileChunkingSystem/
 │── src/
 │   ├── main/java/org/example/
@@ -75,4 +75,4 @@ FileChunkingSystem/
 │── target/                   # Fichiers générés après compilation
 │── pom.xml                    # Configuration Maven
 │── README.md                  # Documentation
-
+```
