@@ -8,7 +8,6 @@ import org.example.deduplication.DuplicateDetector;
 import org.example.model.Chunk;
 import org.example.repository.ChunkRepository;
 import org.springframework.stereotype.Service;
-
 import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -23,12 +22,14 @@ import java.util.logging.Logger;
 @Service
 public class FileProcessor {
     private static final Logger logger = Logger.getLogger(FileProcessor.class.getName());
-    private static final int SEGMENT_SIZE = 10_000_000;
-    private static final int THREAD_COUNT = Math.max(4, Runtime.getRuntime().availableProcessors() * 2);
+    private static final int SEGMENT_SIZE = 4_194_304;
+    private static final int THREAD_COUNT = Math.max(4, Runtime.getRuntime().availableProcessors());
 
-    private final BlockingQueue<byte[]> segmentsQueue = new ArrayBlockingQueue<>(10);
-    private final BlockingQueue<byte[]> chunkQueue = new ArrayBlockingQueue<>(50);
-    private final ExecutorService executor;
+    private final BlockingQueue<byte[]> segmentsQueue = new LinkedBlockingQueue<>(THREAD_COUNT * 2);
+    private final BlockingQueue<byte[]> chunkQueue = new LinkedBlockingQueue<>(THREAD_COUNT * 10);
+    private ExecutorService chunkerExecutor;
+    private ExecutorService compressionExecutor;
+    private ExecutorService dedupExecutor;
 
     private final FastCDCChunker chunker;
     private final DuplicateDetector deduplicator;
@@ -36,8 +37,8 @@ public class FileProcessor {
     private final ChunkRepository chunkRepository;
 
     private final Cache<String, Boolean> deduplicationCache = Caffeine.newBuilder()
-            .maximumSize(10_000)
-            .expireAfterWrite(10, TimeUnit.MINUTES)
+            .maximumSize(100_000)
+            .expireAfterAccess(5, TimeUnit.MINUTES)
             .build();
 
     public FileProcessor(FastCDCChunker chunker, DuplicateDetector deduplicator, CompressionService compressor, ChunkRepository chunkRepository) {
@@ -45,49 +46,55 @@ public class FileProcessor {
         this.deduplicator = deduplicator;
         this.compressor = compressor;
         this.chunkRepository = chunkRepository;
-        this.executor = new ThreadPoolExecutor(THREAD_COUNT, THREAD_COUNT * 2,
-                60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>(100));
+        initializeExecutors();
     }
 
-    public List<Chunk> processFile(String filePath) throws Exception {
+    private void initializeExecutors() {
+        chunkerExecutor = Executors.newFixedThreadPool(THREAD_COUNT);
+        compressionExecutor = Executors.newFixedThreadPool(THREAD_COUNT / 2);
+        dedupExecutor = Executors.newFixedThreadPool(THREAD_COUNT / 2);
+    }
+
+    public synchronized List<Chunk> processFile(String filePath) throws Exception {
+        if (chunkerExecutor.isShutdown() || compressionExecutor.isShutdown() || dedupExecutor.isShutdown()) {
+            initializeExecutors();
+        }
+
         File file = new File(filePath);
         if (!file.exists() || !file.isFile()) {
-            logger.severe("❌ Le fichier n'existe pas : " + filePath);
             throw new Exception("Fichier introuvable : " + filePath);
         }
 
         if (chunkRepository.existsByFilePath(filePath)) {
-            logger.info("ℹ️ Le fichier a déjà été traité : " + filePath);
-            return chunkRepository.findByFilePath(filePath);
+            List<Chunk> existingChunks = chunkRepository.findByFilePath(filePath);
+            if (!existingChunks.isEmpty()) {
+                return existingChunks;
+            }
         }
 
-        logger.info("🔄 Début du traitement du fichier : " + filePath);
         List<Chunk> resultChunks = new CopyOnWriteArrayList<>();
 
-        executor.submit(() -> readFileIntoQueue(filePath));
+        chunkerExecutor.submit(() -> readFileIntoQueue(filePath));
         startChunkerThreads();
         startWorkerThreads(resultChunks, filePath);
 
-        executor.shutdown();
-        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        shutdownExecutors();
 
-        logger.info("✅ Fichier traité avec succès : " + filePath);
         return new ArrayList<>(resultChunks);
     }
 
     private void readFileIntoQueue(String filePath) {
         try (FileChannel fileChannel = FileChannel.open(Paths.get(filePath), StandardOpenOption.READ)) {
             MappedByteBuffer buffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size());
-            logger.info("📖 Lecture du fichier commencée...");
             while (buffer.hasRemaining()) {
                 int remaining = Math.min(buffer.remaining(), SEGMENT_SIZE);
                 byte[] segment = new byte[remaining];
                 buffer.get(segment);
-                segmentsQueue.put(segment);
-                logger.info("📥 Segment ajouté (taille : " + remaining + " octets)");
+                if (!segmentsQueue.offer(segment, 5, TimeUnit.SECONDS)) {
+                    logger.warning("⚠️ Timeout lors de l'ajout du segment dans la queue.");
+                }
             }
-            segmentsQueue.put(new byte[0]); // Signal de fin
-            logger.info("✅ Fin de la lecture du fichier.");
+            segmentsQueue.put(new byte[0]);
         } catch (Exception e) {
             logger.severe("❌ Erreur lors de la lecture du fichier : " + e.getMessage());
         }
@@ -95,10 +102,8 @@ public class FileProcessor {
 
     private void startChunkerThreads() {
         for (int i = 0; i < THREAD_COUNT; i++) {
-            int threadId = i + 1;
-            executor.submit(() -> {
+            chunkerExecutor.submit(() -> {
                 try {
-                    logger.info("🔧 Thread-Chunker " + threadId + " démarré.");
                     while (true) {
                         byte[] segment = segmentsQueue.take();
                         if (segment.length == 0) {
@@ -106,17 +111,15 @@ public class FileProcessor {
                             break;
                         }
                         List<byte[]> chunks = chunker.chunkData(segment);
-                        for (byte[] ch : chunks) {
-                            chunkQueue.put(ch);
-                            if (threadId == 1) {
-                                logger.info("🧩 Chunk ajouté (taille : " + ch.length + " octets)");
+                        for (byte[] chunk : chunks) {
+                            if (!chunkQueue.offer(chunk, 5, TimeUnit.SECONDS)) {
+                                logger.warning("⚠️ Timeout lors de l'ajout d'un chunk dans la queue.");
                             }
                         }
                     }
                     chunkQueue.put(new byte[0]);
-                    logger.info("✅ Thread-Chunker " + threadId + " terminé.");
                 } catch (Exception e) {
-                    logger.severe("❌ Erreur dans le thread-Chunker " + threadId + " : " + e.getMessage());
+                    logger.severe("❌ Erreur dans un thread-Chunker : " + e.getMessage());
                 }
             });
         }
@@ -125,10 +128,8 @@ public class FileProcessor {
     private void startWorkerThreads(List<Chunk> resultChunks, String filePath) {
         AtomicInteger orderIndex = new AtomicInteger(0);
         for (int i = 0; i < THREAD_COUNT; i++) {
-            int threadId = i + 1;
-            executor.submit(() -> {
+            compressionExecutor.submit(() -> {
                 try {
-                    logger.info("💼 Thread-Worker " + threadId + " démarré.");
                     while (true) {
                         byte[] chunk = chunkQueue.take();
                         if (chunk.length == 0) {
@@ -140,23 +141,30 @@ public class FileProcessor {
                         if (deduplicationCache.getIfPresent(hash) == null) {
                             deduplicationCache.put(hash, true);
                             byte[] compressed = compressor.compress(chunk);
-                            Chunk chunkEntity = new Chunk(null, hash, filePath, orderIndex.getAndIncrement());
-                            chunkRepository.save(chunkEntity);
-                            resultChunks.add(chunkEntity);
-                            if (threadId == 1) {
-                                logger.info("💾 Chunk compressé et sauvegardé (Hash : " + hash + ")");
-                            }
-                        } else {
-                            if (threadId == 1) {
-                                logger.info("🔁 Chunk ignoré (déjà existant).");
-                            }
+                            Chunk chunkEntity = new Chunk(hash, filePath, orderIndex.getAndIncrement(), compressed);
+                            dedupExecutor.submit(() -> {
+                                chunkRepository.save(chunkEntity);
+                                logger.info("📦 Chunk enregistré en base : " + filePath + " | Hash: " + hash);
+                            });
                         }
                     }
-                    logger.info("✅ Thread-Worker " + threadId + " terminé.");
                 } catch (Exception e) {
-                    logger.severe("❌ Erreur dans le thread-Worker " + threadId + " : " + e.getMessage());
+                    logger.severe("❌ Erreur dans un thread-Worker : " + e.getMessage());
                 }
             });
+        }
+    }
+
+    private void shutdownExecutors() throws InterruptedException {
+        shutdownExecutorService(chunkerExecutor, "ChunkerExecutor");
+        shutdownExecutorService(compressionExecutor, "CompressionExecutor");
+        shutdownExecutorService(dedupExecutor, "DedupExecutor");
+    }
+
+    private void shutdownExecutorService(ExecutorService executor, String name) throws InterruptedException {
+        executor.shutdown();
+        if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+            executor.shutdownNow();
         }
     }
 

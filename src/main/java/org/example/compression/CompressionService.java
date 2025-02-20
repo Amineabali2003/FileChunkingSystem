@@ -1,19 +1,16 @@
 package org.example.compression;
 
-import net.jpountz.lz4.*;
+import com.github.luben.zstd.Zstd;
 import org.springframework.stereotype.Service;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 
 @Service
 public class CompressionService {
-    public byte[] compress(byte[] data) throws IOException {
-        LZ4Factory factory = LZ4Factory.fastestInstance();
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        LZ4Compressor compressor = factory.fastCompressor();
-        LZ4BlockOutputStream lz4Out = new LZ4BlockOutputStream(baos, 2048, compressor);
-        lz4Out.write(data);
-        lz4Out.close();
-        return baos.toByteArray();
+    public byte[] compress(byte[] data) {
+        return data.length < 100 ? data : Zstd.compress(data, 3);
+    }
+
+    public byte[] decompress(byte[] compressedData) {
+        long decompressedSize = Zstd.decompressedSize(compressedData);
+        return Zstd.decompress(compressedData, (int) decompressedSize);
     }
 }

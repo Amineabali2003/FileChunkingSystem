@@ -1,32 +1,35 @@
 package org.example.model;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Index;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 
 @Entity
-@Table(name = "chunks", indexes = {
-        @Index(name = "idx_chunk_hash", columnList = "hash")
-})
+@Table(name = "chunks")
 public class Chunk {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(nullable = false, unique = true)
     private String hash;
+
+    @Column(nullable = false)
     private String filePath;
+
+    @Column(nullable = false)
     private int orderIndex;
 
-    public Chunk() {
-    }
+    @Lob
+    @Basic(fetch = FetchType.LAZY)
+    @Column(nullable = false, columnDefinition = "BLOB")
+    private byte[] data;
 
-    public Chunk(Long id, String hash, String filePath, int orderIndex) {
-        this.id = id;
+    public Chunk() {}
+
+    public Chunk(String hash, String filePath, int orderIndex, byte[] data) {
         this.hash = hash;
         this.filePath = filePath;
         this.orderIndex = orderIndex;
+        this.data = data;
     }
 
     public Long getId() {
@@ -43,5 +46,9 @@ public class Chunk {
 
     public int getOrderIndex() {
         return orderIndex;
+    }
+
+    public byte[] getData() {
+        return data;
     }
 }

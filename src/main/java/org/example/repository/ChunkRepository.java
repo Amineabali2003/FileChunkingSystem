@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
 import java.util.List;
 
 @Repository
@@ -15,4 +16,7 @@ public interface ChunkRepository extends JpaRepository<Chunk, Long> {
 
     @Query("SELECT c FROM Chunk c WHERE c.filePath = :filePath")
     List<Chunk> findByFilePath(@Param("filePath") String filePath);
+
+    @Query("SELECT c FROM Chunk c WHERE c.filePath = :filePath ORDER BY c.orderIndex ASC")
+    List<Chunk> findByFilePathOrderByOrderIndex(@Param("filePath") String filePath);
 }

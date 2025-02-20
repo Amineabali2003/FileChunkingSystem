@@ -2,32 +2,32 @@ package org.example.deduplication;
 
 import net.jpountz.xxhash.XXHash64;
 import net.jpountz.xxhash.XXHashFactory;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import org.springframework.stereotype.Service;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 @Service
 public class DuplicateDetector {
     private static final Logger logger = Logger.getLogger(DuplicateDetector.class.getName());
-    private final Set<Long> chunkHashes = ConcurrentHashMap.newKeySet();
+    private final Cache<Long, Boolean> chunkHashes = Caffeine.newBuilder()
+            .maximumSize(100_000)
+            .expireAfterAccess(10, java.util.concurrent.TimeUnit.MINUTES)
+            .build();
 
     public boolean isDuplicate(byte[] chunk) {
         long hash = computeXXHash(chunk);
-        boolean isDuplicate = !chunkHashes.add(hash);
+        boolean isDuplicate = chunkHashes.getIfPresent(hash) != null;
 
-        if (isDuplicate) {
-            logger.info("Chunk détecté comme doublon: " + hash);
-        } else {
-            logger.info("Nouveau chunk ajouté: " + hash);
+        if (!isDuplicate) {
+            chunkHashes.put(hash, true);
         }
         return isDuplicate;
     }
 
     public long computeXXHash(byte[] data) {
-        XXHashFactory factory = XXHashFactory.fastestInstance();
+        XXHashFactory factory = XXHashFactory.unsafeInstance();
         XXHash64 xxHash64 = factory.hash64();
-        long seed = 0;
-        return xxHash64.hash(data, 0, data.length, seed);
+        return xxHash64.hash(data, 0, data.length, 0);
     }
 }
