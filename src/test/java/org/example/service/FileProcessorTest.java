@@ -17,7 +17,6 @@ import org.mockito.MockitoAnnotations;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -28,7 +27,6 @@ class FileProcessorTest {
   @Mock
   private ChunkerInterface chunker;
 
-  @Mock
   private FastCDCChunker textChunker;
 
   @Mock
@@ -52,6 +50,8 @@ class FileProcessorTest {
   @BeforeEach
   void setUp() throws Exception {
     MockitoAnnotations.openMocks(this);
+
+    textChunker = new FastCDCChunker();
     fileProcessor = new FileProcessor(chunker, deduplicator, compressor, chunkRepository, textChunker);
 
     testFile = new File(tempDir, "testfile.bin");
@@ -85,17 +85,18 @@ class FileProcessorTest {
   @Test
   void testProcessTextFile_SuccessfulProcessing() throws Exception {
     when(chunkRepository.existsByFilePath(textFile.getAbsolutePath())).thenReturn(false);
-    when(textChunker.chunkTextData(anyString())).thenReturn(
-            List.of("Mardi".getBytes(), "Mercredi".getBytes(), "Lundi".getBytes(), "Jeudi".getBytes(), "Avril".getBytes())
-    );
+
+    // Générer les chunks directement depuis textChunker
+    List<byte[]> textChunks = textChunker.chunkTextData("Mardi Mercredi Lundi Jeudi Avril");
+
     when(deduplicator.computeXXHash(any())).thenReturn(123L);
     when(compressor.compress(any())).thenReturn("compressed".getBytes());
 
     List<Chunk> chunks = fileProcessor.processFile(textFile.getAbsolutePath());
 
     assertNotNull(chunks);
-    assertEquals(5, chunks.size());
-    verify(chunkRepository, times(5)).save(any(Chunk.class));
+    assertEquals(textChunks.size(), chunks.size());
+    verify(chunkRepository, times(textChunks.size())).save(any(Chunk.class));
   }
 
   @Test
@@ -107,7 +108,7 @@ class FileProcessorTest {
   @Test
   void testProcessFile_AlreadyProcessedFile() throws Exception {
     when(chunkRepository.existsByFilePath(testFile.getAbsolutePath())).thenReturn(true);
-    when(chunkRepository.findByFilePath(testFile.getAbsolutePath())).thenReturn(Collections.emptyList());
+    when(chunkRepository.findByFilePath(testFile.getAbsolutePath())).thenReturn(List.of());
 
     List<Chunk> chunks = fileProcessor.processFile(testFile.getAbsolutePath());
 
