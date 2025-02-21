@@ -1,6 +1,7 @@
 package org.example.service;
 
 import org.example.chunking.ChunkerInterface;
+import org.example.chunking.FastCDCChunker;
 import org.example.compression.CompressionServiceInterface;
 import org.example.deduplication.DuplicateDetectorInterface;
 import org.example.model.Chunk;
@@ -28,6 +29,9 @@ class FileProcessorTest {
   private ChunkerInterface chunker;
 
   @Mock
+  private FastCDCChunker textChunker;
+
+  @Mock
   private DuplicateDetectorInterface deduplicator;
 
   @Mock
@@ -43,41 +47,55 @@ class FileProcessorTest {
   File tempDir;
 
   private File testFile;
+  private File textFile;
 
   @BeforeEach
   void setUp() throws Exception {
     MockitoAnnotations.openMocks(this);
+    fileProcessor = new FileProcessor(chunker, deduplicator, compressor, chunkRepository, textChunker);
 
-    fileProcessor = new FileProcessor(chunker, deduplicator, compressor, chunkRepository);
-
-    // Créer un fichier temporaire pour le test
-    testFile = new File(tempDir, "testfile.txt");
+    testFile = new File(tempDir, "testfile.bin");
     try (FileOutputStream fos = new FileOutputStream(testFile)) {
-      fos.write("test data for chunking".getBytes(StandardCharsets.UTF_8));
+      fos.write(new byte[]{1, 2, 3, 4, 5});
+    }
+
+    textFile = new File(tempDir, "testfile.txt");
+    try (FileOutputStream fos = new FileOutputStream(textFile)) {
+      fos.write("Mardi Mercredi Lundi Jeudi Avril".getBytes(StandardCharsets.UTF_8));
     }
   }
 
   @Test
   void testProcessFile_SuccessfulProcessing() throws Exception {
-
     when(chunkRepository.existsByFilePath(testFile.getAbsolutePath())).thenReturn(false);
-    when(chunker.chunkData(any())).thenReturn(List.of("chunk1".getBytes(),
-        "chunk2".getBytes()));
-    when(deduplicator.isDuplicate(any())).thenReturn(false);
+    when(chunker.chunkData(any())).thenReturn(List.of("chunk1".getBytes(), "chunk2".getBytes()));
+    when(deduplicator.computeXXHash(any())).thenReturn(123L);
     when(compressor.compress(any())).thenReturn("compressed".getBytes());
 
     ArgumentCaptor<Chunk> chunkCaptor = ArgumentCaptor.forClass(Chunk.class);
-    when(chunkRepository.save(chunkCaptor.capture())).thenAnswer(invocation -> {
-      Chunk chunk = invocation.getArgument(0);
-      return chunk;
-    });
+    when(chunkRepository.save(chunkCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
 
     List<Chunk> chunks = fileProcessor.processFile(testFile.getAbsolutePath());
 
     assertNotNull(chunks);
     assertEquals(2, chunks.size());
-
     verify(chunkRepository, times(2)).save(any(Chunk.class));
+  }
+
+  @Test
+  void testProcessTextFile_SuccessfulProcessing() throws Exception {
+    when(chunkRepository.existsByFilePath(textFile.getAbsolutePath())).thenReturn(false);
+    when(textChunker.chunkTextData(anyString())).thenReturn(
+            List.of("Mardi".getBytes(), "Mercredi".getBytes(), "Lundi".getBytes(), "Jeudi".getBytes(), "Avril".getBytes())
+    );
+    when(deduplicator.computeXXHash(any())).thenReturn(123L);
+    when(compressor.compress(any())).thenReturn("compressed".getBytes());
+
+    List<Chunk> chunks = fileProcessor.processFile(textFile.getAbsolutePath());
+
+    assertNotNull(chunks);
+    assertEquals(5, chunks.size());
+    verify(chunkRepository, times(5)).save(any(Chunk.class));
   }
 
   @Test
@@ -95,7 +113,6 @@ class FileProcessorTest {
 
     assertNotNull(chunks);
     assertTrue(chunks.isEmpty());
-
     verify(chunkRepository, never()).save(any());
   }
 }
