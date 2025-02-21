@@ -2,9 +2,10 @@ package org.example.service;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import org.example.chunking.FastCDCChunker;
-import org.example.compression.CompressionService;
-import org.example.deduplication.DuplicateDetector;
+
+import org.example.chunking.ChunkerInterface;
+import org.example.compression.CompressionServiceInterface;
+import org.example.deduplication.DuplicateDetectorInterface;
 import org.example.model.Chunk;
 import org.example.repository.ChunkRepository;
 import org.springframework.stereotype.Service;
@@ -31,9 +32,9 @@ public class FileProcessor {
     private ExecutorService compressionExecutor;
     private ExecutorService dedupExecutor;
 
-    private final FastCDCChunker chunker;
-    private final DuplicateDetector deduplicator;
-    private final CompressionService compressor;
+    private final ChunkerInterface chunker;
+    private final DuplicateDetectorInterface deduplicator;
+    private final CompressionServiceInterface compressor;
     private final ChunkRepository chunkRepository;
 
     private final Cache<String, Boolean> deduplicationCache = Caffeine.newBuilder()
@@ -41,7 +42,9 @@ public class FileProcessor {
             .expireAfterAccess(5, TimeUnit.MINUTES)
             .build();
 
-    public FileProcessor(FastCDCChunker chunker, DuplicateDetector deduplicator, CompressionService compressor, ChunkRepository chunkRepository) {
+    public FileProcessor(ChunkerInterface chunker, DuplicateDetectorInterface deduplicator,
+            CompressionServiceInterface compressor,
+            ChunkRepository chunkRepository) {
         this.chunker = chunker;
         this.deduplicator = deduplicator;
         this.compressor = compressor;
@@ -110,6 +113,7 @@ public class FileProcessor {
                             segmentsQueue.put(segment);
                             break;
                         }
+
                         List<byte[]> chunks = chunker.chunkData(segment);
                         for (byte[] chunk : chunks) {
                             if (!chunkQueue.offer(chunk, 5, TimeUnit.SECONDS)) {
