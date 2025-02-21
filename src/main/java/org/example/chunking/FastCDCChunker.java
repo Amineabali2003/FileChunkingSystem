@@ -1,24 +1,34 @@
 package org.example.chunking;
 
+import io.github.zabuzard.fastcdc4j.external.chunking.Chunk;
+import io.github.zabuzard.fastcdc4j.external.chunking.Chunker;
+import io.github.zabuzard.fastcdc4j.external.chunking.ChunkerBuilder;
 import org.springframework.stereotype.Component;
-import java.nio.charset.StandardCharsets;
+
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+@Component
 public class FastCDCChunker implements ChunkerInterface {
-    public List<byte[]> chunkData(byte[] data, boolean isText) {
+
+    public final Chunker chunker;
+
+    public FastCDCChunker(Chunker chunker) {
+        this.chunker = chunker;
+    }
+
+    public FastCDCChunker() {
+        this(new ChunkerBuilder().build());
+    }
+
+    @Override
+    public List<byte[]> chunkData(byte[] data) throws IOException {
         List<byte[]> chunks = new ArrayList<>();
 
-        if (isText) {
-            String text = new String(data, StandardCharsets.UTF_8);
-            String[] words = text.split("\\s+");
-            for (String word : words) {
-                chunks.add(word.getBytes(StandardCharsets.UTF_8));
-            }
-        } else {
-            chunks.add(data);
+        for (Chunk c : chunker.chunk(data)) {
+            chunks.add(c.getData());
         }
-
         return chunks;
     }
 }

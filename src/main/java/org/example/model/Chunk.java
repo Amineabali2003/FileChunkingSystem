@@ -18,8 +18,9 @@ public class Chunk {
     @Column(nullable = false)
     private int orderIndex;
 
-    // 🚀 Correction : Enlever @Lob pour éviter `getBlob()`
-    @Column(nullable = false)
+    @Lob
+    @Basic(fetch = FetchType.LAZY)
+    @Column(nullable = false, columnDefinition = "BLOB")
     private byte[] data;
 
     public Chunk() {}
@@ -31,9 +32,23 @@ public class Chunk {
         this.data = data;
     }
 
-    public Long getId() { return id; }
-    public String getHash() { return hash; }
-    public String getFilePath() { return filePath; }
-    public int getOrderIndex() { return orderIndex; }
-    public byte[] getData() { return data; }
+    public Long getId() {
+        return id;
+    }
+
+    public String getHash() {
+        return hash;
+    }
+
+    public String getFilePath() {
+        return filePath;
+    }
+
+    public int getOrderIndex() {
+        return orderIndex;
+    }
+
+    public byte[] getData() {
+        return data;
+    }
 }
