@@ -5,8 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-@Component
-public class FastCDCChunker {
+public class FastCDCChunker implements ChunkerInterface {
     public List<byte[]> chunkData(byte[] data, boolean isText) {
         List<byte[]> chunks = new ArrayList<>();
 

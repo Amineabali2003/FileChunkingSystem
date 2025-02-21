@@ -7,6 +7,10 @@ import io.micrometer.core.instrument.Tags;
 import org.example.chunking.FastCDCChunker;
 import org.example.compression.CompressionService;
 import org.example.deduplication.DuplicateDetector;
+
+import org.example.chunking.ChunkerInterface;
+import org.example.compression.CompressionServiceInterface;
+import org.example.deduplication.DuplicateDetectorInterface;
 import org.example.model.Chunk;
 import org.example.repository.ChunkRepository;
 import org.springframework.stereotype.Service;
@@ -33,9 +37,9 @@ public class FileProcessor {
     private ExecutorService compressionExecutor;
     private ExecutorService dedupExecutor;
 
-    private final FastCDCChunker chunker;
-    private final DuplicateDetector deduplicator;
-    private final CompressionService compressor;
+    private final ChunkerInterface chunker;
+    private final DuplicateDetectorInterface deduplicator;
+    private final CompressionServiceInterface compressor;
     private final ChunkRepository chunkRepository;
     private final MeterRegistry meterRegistry;
 
@@ -128,6 +132,7 @@ public class FileProcessor {
                             break;
                         }
 
+
                         List<byte[]> chunks = chunker.chunkData(segment, isText);
 
                         for (byte[] chunk : chunks) {
@@ -195,6 +200,7 @@ public class FileProcessor {
         return chunkRepository.findAll();
     }
 
+
     public boolean verifyChunkIntegrity(String filePath) {
         long originalSize = new File(filePath).length();
         long chunkedSize = chunkRepository.findByFilePathOrderByOrderIndex(filePath)
@@ -204,3 +210,4 @@ public class FileProcessor {
         return originalSize == chunkedSize;
     }
 }
+
