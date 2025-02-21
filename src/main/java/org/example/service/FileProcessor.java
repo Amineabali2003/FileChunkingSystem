@@ -2,6 +2,11 @@ package org.example.service;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
+import org.example.chunking.FastCDCChunker;
+import org.example.compression.CompressionService;
+import org.example.deduplication.DuplicateDetector;
 
 import org.example.chunking.ChunkerInterface;
 import org.example.compression.CompressionServiceInterface;
@@ -9,13 +14,13 @@ import org.example.deduplication.DuplicateDetectorInterface;
 import org.example.model.Chunk;
 import org.example.repository.ChunkRepository;
 import org.springframework.stereotype.Service;
-import java.io.*;
+
+import java.io.File;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
-import java.util.ArrayList;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
@@ -36,19 +41,20 @@ public class FileProcessor {
     private final DuplicateDetectorInterface deduplicator;
     private final CompressionServiceInterface compressor;
     private final ChunkRepository chunkRepository;
+    private final MeterRegistry meterRegistry;
 
     private final Cache<String, Boolean> deduplicationCache = Caffeine.newBuilder()
             .maximumSize(100_000)
             .expireAfterAccess(5, TimeUnit.MINUTES)
             .build();
 
-    public FileProcessor(ChunkerInterface chunker, DuplicateDetectorInterface deduplicator,
-            CompressionServiceInterface compressor,
-            ChunkRepository chunkRepository) {
+    public FileProcessor(FastCDCChunker chunker, DuplicateDetector deduplicator, CompressionService compressor,
+                         ChunkRepository chunkRepository, MeterRegistry meterRegistry) {
         this.chunker = chunker;
         this.deduplicator = deduplicator;
         this.compressor = compressor;
         this.chunkRepository = chunkRepository;
+        this.meterRegistry = meterRegistry;
         initializeExecutors();
     }
 
@@ -68,22 +74,34 @@ public class FileProcessor {
             throw new Exception("Fichier introuvable : " + filePath);
         }
 
+        meterRegistry.gauge("file.original.size", Tags.of("filePath", filePath), file, File::length);
+
         if (chunkRepository.existsByFilePath(filePath)) {
             List<Chunk> existingChunks = chunkRepository.findByFilePath(filePath);
             if (!existingChunks.isEmpty()) {
+                registerChunkMetrics(filePath);
                 return existingChunks;
             }
         }
 
         List<Chunk> resultChunks = new CopyOnWriteArrayList<>();
+        boolean isText = isTextFile(filePath);
 
         chunkerExecutor.submit(() -> readFileIntoQueue(filePath));
-        startChunkerThreads();
+        startChunkerThreads(isText);
         startWorkerThreads(resultChunks, filePath);
 
         shutdownExecutors();
+        registerChunkMetrics(filePath);
 
-        return new ArrayList<>(resultChunks);
+        return resultChunks;
+    }
+
+    private void registerChunkMetrics(String filePath) {
+        Long totalChunkSize = chunkRepository.getTotalSizeByFilePath(filePath);
+        double chunkSize = (totalChunkSize != null) ? totalChunkSize.doubleValue() : 0.0;
+        meterRegistry.gauge("file.chunks.totalSize", Tags.of("filePath", filePath), chunkSize);
+        meterRegistry.gauge("file.chunks.count", Tags.of("filePath", filePath), chunkRepository.countByFilePath(filePath));
     }
 
     private void readFileIntoQueue(String filePath) {
@@ -94,16 +112,16 @@ public class FileProcessor {
                 byte[] segment = new byte[remaining];
                 buffer.get(segment);
                 if (!segmentsQueue.offer(segment, 5, TimeUnit.SECONDS)) {
-                    logger.warning("⚠️ Timeout lors de l'ajout du segment dans la queue.");
+                    logger.warning("Timeout lors de l'ajout du segment dans la queue.");
                 }
             }
             segmentsQueue.put(new byte[0]);
         } catch (Exception e) {
-            logger.severe("❌ Erreur lors de la lecture du fichier : " + e.getMessage());
+            logger.severe("Erreur lors de la lecture du fichier : " + e.getMessage());
         }
     }
 
-    private void startChunkerThreads() {
+    private void startChunkerThreads(boolean isText) {
         for (int i = 0; i < THREAD_COUNT; i++) {
             chunkerExecutor.submit(() -> {
                 try {
@@ -114,16 +132,18 @@ public class FileProcessor {
                             break;
                         }
 
-                        List<byte[]> chunks = chunker.chunkData(segment);
+
+                        List<byte[]> chunks = chunker.chunkData(segment, isText);
+
                         for (byte[] chunk : chunks) {
                             if (!chunkQueue.offer(chunk, 5, TimeUnit.SECONDS)) {
-                                logger.warning("⚠️ Timeout lors de l'ajout d'un chunk dans la queue.");
+                                logger.warning("Timeout lors de l'ajout d'un chunk dans la queue.");
                             }
                         }
                     }
                     chunkQueue.put(new byte[0]);
                 } catch (Exception e) {
-                    logger.severe("❌ Erreur dans un thread-Chunker : " + e.getMessage());
+                    logger.severe("Erreur dans un thread-Chunker : " + e.getMessage());
                 }
             });
         }
@@ -148,12 +168,12 @@ public class FileProcessor {
                             Chunk chunkEntity = new Chunk(hash, filePath, orderIndex.getAndIncrement(), compressed);
                             dedupExecutor.submit(() -> {
                                 chunkRepository.save(chunkEntity);
-                                logger.info("📦 Chunk enregistré en base : " + filePath + " | Hash: " + hash);
+                                logger.info("Chunk enregistré en base : " + filePath + " | Hash: " + hash);
                             });
                         }
                     }
                 } catch (Exception e) {
-                    logger.severe("❌ Erreur dans un thread-Worker : " + e.getMessage());
+                    logger.severe("Erreur dans un thread-Worker : " + e.getMessage());
                 }
             });
         }
@@ -172,7 +192,22 @@ public class FileProcessor {
         }
     }
 
+    private boolean isTextFile(String filePath) {
+        return filePath.endsWith(".txt") || filePath.endsWith(".log") || filePath.endsWith(".csv");
+    }
+
     public List<Chunk> getAllChunks() {
         return chunkRepository.findAll();
     }
+
+
+    public boolean verifyChunkIntegrity(String filePath) {
+        long originalSize = new File(filePath).length();
+        long chunkedSize = chunkRepository.findByFilePathOrderByOrderIndex(filePath)
+                .stream()
+                .mapToLong(chunk -> chunk.getData().length)
+                .sum();
+        return originalSize == chunkedSize;
+    }
 }
+
